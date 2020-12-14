@@ -1,95 +1,127 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 
-// class HomeScreen extends StatelessWidget {
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text("Second Route"),
-//       ),
-//       body: Center(
-//         child: ElevatedButton(
-//           onPressed: () {
-//             // Navigate back to first route when tapped.
-//           },
-//           child: Text('Go back!'),
-//         ),
-//       ),
-//     );
-//   }
-// }
+import 'package:http/http.dart' as http;
+import 'package:flutter_app/StorageUtil.dart';
+import 'dart:async';
+import 'package:pull_to_refresh/pull_to_refresh.dart';
 
-// class HomeScreen extends StatelessWidget {
-//   @override
-//   Widget build(BuildContext context) {
-//     return Scaffold(
-//       appBar: AppBar(
-//         title: Text("Widget Table"),
-//       ),
-//       body: criaTabela(),
-//     );
-//   }
-//   criaTabela() {
-//     return Table(
-//       defaultColumnWidth: FixedColumnWidth(150.0),
-//       border: TableBorder(
-//         horizontalInside: BorderSide(
-//           color: Colors.black,
-//           style: BorderStyle.solid,
-//           width: 1.0,
-//         ),
-//         verticalInside: BorderSide(
-//           color: Colors.black,
-//           style: BorderStyle.solid,
-//           width: 1.0,
-//         ),
-//       ),
-//       children: [
-//         _criarLinhaTable("Pontos, Time, Gols"),
-//         _criarLinhaTable("25, Palmeiras,16 "),
-//         _criarLinhaTable("20, Santos, 5"),
-//         _criarLinhaTable("17, Flamento, 6"),
-//       ],
-//     );
-//   }
-//   _criarLinhaTable(String listaNomes) {
-//     return TableRow(
-//       children: listaNomes.split(',').map((name) {
-//         return Container(
-//           alignment: Alignment.center,
-//           child: Text(
-//             name,
-//             style: TextStyle(fontSize: 20.0),
-//           ),
-//           padding: EdgeInsets.all(8.0),
-//         );
-//       }).toList(),
-//     );
-//   }
-// }
+RefreshController _refreshController = RefreshController(initialRefresh: false);
 
-class HomeScreen extends StatelessWidget {
+void _onLoading() async{
+
+  await Future.delayed(Duration(milliseconds: 1000));
+
+  _refreshController.loadComplete();
+}
+
+Future<Albuns> getTasks() async {
+
+  final http.Response response = await http.get(
+    'http://192.168.1.109:3000/research?userId=1234',
+    headers: <String, String>{
+      'Content-Type': 'application/json; charset=UTF-8',
+    }
+  );
+
+  if (response.statusCode == 200) {
+
+    final res = response.body;
+
+    StorageUtil.putString("response", res);
+    _refreshController.refreshCompleted();
+
+  } else {
+    print(response.statusCode);
+  }
+}
+
+class Album {
+
+  final String title;
+
+  Album(this.title);
+
+  factory Album.fromJson(Map<String, dynamic> json) {
+    return Album(
+      json['title'],
+    );
+  }
+}
+
+class Albuns {
+
+  final List<Album> albuns;
+
+  Albuns(this.albuns);
+
+  factory Albuns.fromJson(Map<String, dynamic> json) {
+    return Albuns(
+      (json['body'] as List).map((i) {
+        return Album.fromJson(i);
+      }).toList()
+    );
+  }
+}
+
+class FavoriteWidget extends StatefulWidget {
+  @override
+  _FavoriteWidgetState createState() => _FavoriteWidgetState();
+
+}
+
+class _FavoriteWidgetState extends State<FavoriteWidget> {
+
+  bool _refresh = false;
+
+  @override
   Widget build(BuildContext context) {
+
+    void _toggleRefresh(){
+      setState(() {
+        if(_refresh){
+          _refresh = true;
+        }
+      });
+    }
+
+    getTasks();
+
+    final res =  StorageUtil.getString("response");
+    final album =  Albuns.fromJson(jsonDecode(res));
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('Data Tables'),
+        title: Text('Todas as Pesquisas'),
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          PaginatedDataTable(
-            header: Text('Header Text'),
-            rowsPerPage: 4,
-            columns: [
-              DataColumn(label: Text('ID')),
-              DataColumn(label: Text('Título da Pesquisa')),
-            ],
-            source: _DataSource(context),
-          ),
-        ],
+      body: SmartRefresher(
+        enablePullDown: true,
+        controller: _refreshController,
+        onRefresh: () async{
+
+          _toggleRefresh();
+          FavoriteWidget();
+        },
+        onLoading: _onLoading,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            PaginatedDataTable(
+              header: Text('Pesquisas'),
+              rowsPerPage: album.albuns.length,
+              columns: [
+                DataColumn(label: Text('ID')),
+                DataColumn(label: Text('Título da Pesquisa')),
+              ],
+              source: _DataSource(context),
+            ),
+          ],
+        ),
       ),
     );
   }
+
 }
 
 class _Row {
@@ -104,14 +136,18 @@ class _Row {
   bool selected = false;
 }
 
-class _DataSource extends DataTableSource {
+class _DataSource extends DataTableSource{
+
   _DataSource(this.context) {
-    _rows = <_Row>[
-      _Row('Cell A1', 'CellB1'),
-      // _Row('Cell A2', 'CellB2', 'CellC2', 2),
-      // _Row('Cell A3', 'CellB3', 'CellC3', 3),
-      // _Row('Cell A4', 'CellB4', 'CellC4', 4),
-    ];
+
+    final res =  StorageUtil.getString("response");
+    final album =  Albuns.fromJson(jsonDecode(res));
+
+    _rows = <_Row>[];
+
+    for(var i = 0; i< album.albuns.length; i++){
+      _rows.add(_Row((i+1).toString(), album.albuns[i].title));
+    }
   }
 
   final BuildContext context;
